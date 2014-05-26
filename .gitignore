@@ -2,4 +2,5 @@ _SpecRunner.html
 .DS_Store
 *.swp
 .grunt/**/*
+.idea/**/*
 node_modules/**/*
