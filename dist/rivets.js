@@ -1456,7 +1456,7 @@
       return exports;
     });
   } else {
-    Rivets.factory(this.rivets = {});
+    Rivets.factory(this.rivets_opt = {});
   }
 
 }).call(this);
