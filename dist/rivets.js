@@ -1069,66 +1069,81 @@
       // one that we are expecting (or close enough for now anyway)
       var hasContext = context && (context.removed && context.added && context.changed);
 
-      if(hasContext && context.removed.elements.length) {
-        for(index = 0; index < context.removed.elements.length; ++index) {
-          view = iterated[context.removed.start + index];
-          view.unbind();
-          this.marker.parentNode.removeChild(view.els[0]);
-        }
-
-        iterated.splice(context.removed.start, context.removed.elements.length);
-      }
-
-      if(hasContext && context.added.elements.length) {
-        var fragment = document.createDocumentFragment();
-        var args = [context.added.start, 0];
-        for(index = 0; index < context.added.elements.length; ++index) {
-          model = context.added.elements[index]
-          data = {
-            index: index + context.added.start
-          };
-          data[modelName] = model;
-          __extend(data, curModels);
-
-          options = {
-            binders: this.view.options.binders,
-            formatters: this.view.options.formatters,
-            adapters: this.view.options.adapters,
-            config: {}
-          };
-          config = this.view.options.config;
-          __extend(options.config, config);
-
-          options.config.preloadData = true;
-          template = el.cloneNode(true);
-          view = new Rivets.View(template, data, options);
-          view.bind();
-          args.push(view);
-
-          fragment.appendChild(template);
-        }
-
-        previous = context.added.start ? iterated[context.added.start - 1].els[0] : this.marker;
-
-        iterated.splice.apply(iterated, args);
-        this.marker.parentNode.insertBefore(fragment, previous.nextSibling);
-      }
-
-      if(hasContext && context.changed.elements.length) {
-        for(index = context.changed.start; index < context.changed.elements.length; ++index) {
-          model = collection[index];
-          data = {
-            index: index
-          };
-          data[modelName] = model;
-          iterated[index].update(data);
-        }
-      }
+      var reIndexAt = -1;
 
       if(hasContext) {
-        for(index = 0; index < iterated.length; ++index) {
-          iterated[index].models.index = index;
+        if(context.removed.elements.length) {
+          for(index = 0; index < context.removed.elements.length; ++index) {
+            view = iterated[context.removed.start + index];
+            view.unbind();
+            this.marker.parentNode.removeChild(view.els[0]);
+          }
+
+          iterated.splice(context.removed.start, context.removed.elements.length);
+
+          // Need to reindex anything that is greater than what was removed
+          reIndexAt = context.removed.start;
         }
+
+        if(context.added.elements.length) {
+          var fragment = document.createDocumentFragment();
+          var args = [context.added.start, 0];
+          for(index = 0; index < context.added.elements.length; ++index) {
+            model = context.added.elements[index]
+            data = {
+              index: index + context.added.start
+            };
+            data[modelName] = model;
+            __extend(data, curModels);
+
+            options = {
+              binders: this.view.options.binders,
+              formatters: this.view.options.formatters,
+              adapters: this.view.options.adapters,
+              config: {}
+            };
+            config = this.view.options.config;
+            __extend(options.config, config);
+
+            options.config.preloadData = true;
+            template = el.cloneNode(true);
+            view = new Rivets.View(template, data, options);
+            view.bind();
+            args.push(view);
+
+            fragment.appendChild(template);
+          }
+
+          previous = context.added.start ? iterated[context.added.start - 1].els[0] : this.marker;
+
+          iterated.splice.apply(iterated, args);
+          this.marker.parentNode.insertBefore(fragment, previous.nextSibling);
+
+          // If we've added, we can update what needs reIndexing even if items were removed as well (ie: splice)
+          // the recently added items will all have their correct index.  It is only those items after what was
+          // added that now need updating.
+          reIndexAt = Math.max(context.added.start + context.added.elements.length, reIndexAt);
+        }
+
+        if(context.changed.elements.length) {
+          for(index = context.changed.start; index < context.changed.elements.length; ++index) {
+            model = collection[index];
+            data = {
+              index: index
+            };
+            data[modelName] = model;
+            iterated[index].update(data);
+          }
+
+          // Currently this only occurs during a sort/reverse - while this could change what needs reIndexing
+          // ignoring it for now...
+        }
+
+        while(reIndexAt >= 0 && reIndexAt < iterated.length) {
+          iterated[reIndexAt].models.index = reIndexAt;
+          reIndexAt++;
+        }
+
         return;
       }
 
@@ -1271,7 +1286,7 @@
             { name: 'pop',
               chain: function (context, original, args) {
                 var retVal = {
-                  removed: { start: context.length - 1, elements: [context[context.length - 1]] },
+                  removed: { start: context.length ? context.length - 1 : -1, elements: context.length ? [context[context.length - 1]]: [] },
                   added:   { start: -1, elements: [] },
                   changed: { start: -1, elements: [] }
                 };
@@ -1282,7 +1297,7 @@
             { name: 'shift',
               chain: function (context, original, args) {
                 var retVal = {
-                  removed: { start: 0,  elements: [context[0]] },
+                  removed: { start: context.length ? 0 : -1,  elements: context.length ? [context[0]] : [] },
                   added:   { start: -1, elements: [] },
                   changed: { start: -1, elements: [] }
                 };
