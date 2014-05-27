@@ -30,7 +30,7 @@
         {name:  'Beth'}
     ];
 
-    var view = rivets.bind(document.querySelectorAll('ul')[0], {
+    var view = rivets_opt.bind(document.querySelectorAll('ul')[0], {
         items: data
     });
 
@@ -66,7 +66,7 @@
         }
     }
 
-    var ctrlView = rivets.bind(document.querySelectorAll('ul')[1], controller);
+    var ctrlView = rivets_opt.bind(document.querySelectorAll('ul')[1], controller);
 
 })();
 </script>
