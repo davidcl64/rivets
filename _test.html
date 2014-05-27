@@ -19,7 +19,7 @@
     <li><button rv-on-click="ctrl.shift">shift</button></li>
     <li><button rv-on-click="ctrl.sort">sort</button></li>
     <li><button rv-on-click="ctrl.reverse">reverse</button></li>
-    <li>splice</li>
+    <li><input type="text" rv-value="data.spStart"/><input type="text" rv-value="data.spRemove"/><input type="text" rv-value="data.spNew"/><button rv-on-click="ctrl.splice">splice</button></li>
 </ul>
 <script>
 (function() {
@@ -39,7 +39,7 @@
         ctrl: {
             push: function() {
                 var names = controller.data.push.split(',').map(function(val) {
-                    return {name: val};
+                    return {name: val.trim()};
                 });
 
                 data.push.apply(data, names);
@@ -48,7 +48,7 @@
             pop: function() { data.pop(); },
             unshift: function() {
                 var names = controller.data.unshift.split(',').map(function(val) {
-                    return {name: val};
+                    return {name: val.trim()};
                 });
 
                 data.unshift.apply(data, names);
@@ -61,7 +61,30 @@
                     else return 0;
                 })
             },
-            reverse: function() { data.reverse(); }
+            reverse: function() { data.reverse(); },
+            splice: function() {
+                var start = +controller.data.spStart || 0;
+                var rem   = +controller.data.spRemove || 0;
+                var names = controller.data.spNew;
+
+                if(names && names.length > 0) {
+                    names = names.split(',').map(function (val) {
+                        return {name: val.trim()};
+                    });
+                } else {
+                    names = [];
+                }
+
+                console.log({
+                    start: start,
+                    remove: rem,
+                    names: names
+                });
+
+                var args = [start, rem].concat(names);
+                console.log(args);
+                data.splice.apply(data, args);
+            }
 
         }
     }
