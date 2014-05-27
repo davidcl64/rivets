@@ -1128,11 +1128,15 @@
         if(context.changed.elements.length) {
           for(index = context.changed.start, len = context.changed.elements.length; index < len; ++index) {
             model = collection[index];
-            data = {
-              index: index
-            };
-            data[modelName] = model;
-            iterated[index].update(data);
+
+            if (iterated[index].models[modelName] !== model) {
+              data = {
+                index: index
+              };
+              data[modelName] = model;
+
+              iterated[index].update(data);
+            }
           }
 
           // Currently this only occurs during a sort/reverse - while this could change what needs reIndexing
