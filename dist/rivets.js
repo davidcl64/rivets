@@ -1126,7 +1126,7 @@
         }
 
         if(context.changed.elements.length) {
-          for(index = context.changed.start; index < context.changed.elements.length; ++index) {
+          for(index = context.changed.start, len = context.changed.elements.length; index < len; ++index) {
             model = collection[index];
             data = {
               index: index
@@ -1137,6 +1137,7 @@
 
           // Currently this only occurs during a sort/reverse - while this could change what needs reIndexing
           // ignoring it for now...
+          reIndexAt = -1;
         }
 
         while(reIndexAt >= 0 && reIndexAt < iterated.length) {
