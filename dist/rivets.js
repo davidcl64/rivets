@@ -1067,89 +1067,134 @@
       // Since I am hacking this in as a proof of concept, this can be called with
       // an value for context that isn't expected.  This ensures the context is actually
       // one that we are expecting (or close enough for now anyway)
-      var hasContext = context && (context.removed && context.added && context.changed);
+      var hasContext = context && (context.fn && context.args && context.response);
 
-      var reIndexAt = -1;
+      function buildViews(startIdx, elements) {
+        var fragment = document.createDocumentFragment();
+        var len      = elements.length;
+        var newViews = [];
+        var index;
 
-      if(hasContext) {
-        if(context.removed.elements.length) {
-          for(index = 0; index < context.removed.elements.length; ++index) {
-            view = iterated[context.removed.start + index];
+        for(index = 0; index < len; ++index) {
+          model = elements[index];
+          data = {
+            index: index + startIdx
+          };
+          data[modelName] = model;
+          __extend(data, curModels);
+
+          options = {
+            binders:    this.view.options.binders,
+            formatters: this.view.options.formatters,
+            adapters:   this.view.options.adapters,
+            config:     {}
+          };
+          config = this.view.options.config;
+          __extend(options.config, config);
+
+          options.config.preloadData = true;
+          template = el.cloneNode(true);
+          view = new Rivets.View(template, data, options);
+          view.bind();
+          newViews.push(view);
+
+          fragment.appendChild(template);
+        }
+
+        return { views: newViews, fragment: fragment };
+      }
+
+      function updateAll() {
+        var len = collection.length;
+        for(index = 0; index < len; ++index) {
+          model = collection[index];
+
+          if (iterated[index].models[modelName] !== model) {
+            data = {
+              index: index
+            };
+            data[modelName] = model;
+
+            iterated[index].update(data);
+          }
+        }
+      }
+
+      var methods = {
+        push:    function() {
+          var buildResults = buildViews.call(this, iterated.length > 0 ? iterated.length - 1 : 0, arguments);
+          var addAtIdx = iterated.length - 1;
+
+          previous = addAtIdx >= 0 ? iterated[addAtIdx].els[0] : this.marker;
+
+          iterated.push.apply(iterated,buildResults.views);
+          this.marker.parentNode.insertBefore(buildResults.fragment, previous.nextSibling);
+        },
+
+        pop:     function() {
+          var view = iterated.pop();
+          view.unbind();
+          this.marker.parentNode.removeChild(view.els[0]);
+        },
+
+        shift:   function() {
+          var view = iterated.shift();
+          view.unbind();
+          this.marker.parentNode.removeChild(view.els[0]);
+        },
+
+        unshift: function() {
+          var buildResults = buildViews.call(this, 0, arguments);
+          var len;
+
+          iterated.unshift.apply(iterated, buildResults.views);
+          this.marker.parentNode.insertBefore(buildResults.fragment, this.marker.nextSibling);
+
+          for(index = arguments.length, len = iterated.length; index < len; ++index) {
+            iterated[index].models.index = index;
+          }
+        },
+
+        splice:  function() {
+          var start    = arguments[0];
+          var remove   = arguments[1];
+          var elements = __slice.call(arguments, 2);
+          var len      = elements.length;
+          var newViews = [];
+
+          // Normalize start to a positive index
+          //
+          // If start is greater than the array length, set it to the length
+          start = Math.min(start, iterated.length);
+
+          // If start is < 0, offset from the end of the array.  Taking the max
+          // of the result or zero matches the behavior of chrome when
+          // Math.abs(start) > length
+          start = start < 0 ? Math.max(iterated.length + start, 0) : start;
+
+          var buildResults = buildViews.call(this, start, elements);
+
+          previous = start - 1 >= 0 ? iterated[start - 1].els[0]: this.marker;
+
+          var removedViews = iterated.splice.apply(iterated, [start, remove].concat(buildResults.views));
+          for(index = 0; index < removedViews.length; ++index) {
+            var view = removedViews[index];
             view.unbind();
             this.marker.parentNode.removeChild(view.els[0]);
           }
+          this.marker.parentNode.insertBefore(buildResults.fragment, previous.nextSibling);
 
-          iterated.splice(context.removed.start, context.removed.elements.length);
-
-          // Need to reindex anything that is greater than what was removed
-          reIndexAt = context.removed.start;
-        }
-
-        if(context.added.elements.length) {
-          var fragment = document.createDocumentFragment();
-          var args = [context.added.start, 0];
-          for(index = 0; index < context.added.elements.length; ++index) {
-            model = context.added.elements[index]
-            data = {
-              index: index + context.added.start
-            };
-            data[modelName] = model;
-            __extend(data, curModels);
-
-            options = {
-              binders: this.view.options.binders,
-              formatters: this.view.options.formatters,
-              adapters: this.view.options.adapters,
-              config: {}
-            };
-            config = this.view.options.config;
-            __extend(options.config, config);
-
-            options.config.preloadData = true;
-            template = el.cloneNode(true);
-            view = new Rivets.View(template, data, options);
-            view.bind();
-            args.push(view);
-
-            fragment.appendChild(template);
+          for(index = start + len, len = iterated.length; index < iterated.length; ++index) {
+            iterated[index].models.index = index;
           }
+        },
 
-          previous = context.added.start ? iterated[context.added.start - 1].els[0] : this.marker;
+        reverse: updateAll,
+        sort:    updateAll
+      }
 
-          iterated.splice.apply(iterated, args);
-          this.marker.parentNode.insertBefore(fragment, previous.nextSibling);
-
-          // If we've added, we can update what needs reIndexing even if items were removed as well (ie: splice)
-          // the recently added items will all have their correct index.  It is only those items after what was
-          // added that now need updating.
-          reIndexAt = Math.max(context.added.start + context.added.elements.length, reIndexAt);
-        }
-
-        if(context.changed.elements.length) {
-          for(index = context.changed.start, len = context.changed.elements.length; index < len; ++index) {
-            model = collection[index];
-
-            if (iterated[index].models[modelName] !== model) {
-              data = {
-                index: index
-              };
-              data[modelName] = model;
-
-              iterated[index].update(data);
-            }
-          }
-
-          // Currently this only occurs during a sort/reverse - while this could change what needs reIndexing
-          // ignoring it for now...
-          reIndexAt = -1;
-        }
-
-        while(reIndexAt >= 0 && reIndexAt < iterated.length) {
-          iterated[reIndexAt].models.index = reIndexAt;
-          reIndexAt++;
-        }
-
-        return;
+      if(hasContext) {
+        return methods[context.fn].apply(this, context.args);
       }
 
       for (index = 0, len = collection.length; index < len; ++index) {
@@ -1244,15 +1289,18 @@
       return this.weakmap[obj[this.id]];
     },
     stubFunction: function(obj, fn) {
-      var original  = obj[fn.name];
+      var original  = obj[fn];
       var map       = this.weakReference(obj);
       var weakmap   = this.weakmap;
 
-      return obj[fn.name] = function() {
+      return obj[fn] = function() {
         var callback, keypath, kpKey, response, i, len, keypaths, curMap, callbacks;
-        //response = original.apply(obj, arguments);
+        var response = {
+          fn: fn,
+          args: arguments,
+          response: original.apply(obj, arguments)
+        };
 
-        response = fn.chain(obj, original, arguments);
         keypaths = map.keypaths;
         for (kpKey in keypaths) {
           keypath = keypaths[kpKey];
@@ -1275,98 +1323,7 @@
         map = this.weakReference(obj);
         if (map.keypaths == null) {
           map.keypaths = {};
-          functions = [
-            {
-              name: 'push',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: -1, elements: [] },
-                  added:   { start: context.length, elements: args },
-                  changed: { start: -1, elements: [] }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'pop',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: context.length ? context.length - 1 : -1, elements: context.length ? [context[context.length - 1]]: [] },
-                  added:   { start: -1, elements: [] },
-                  changed: { start: -1, elements: [] }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'shift',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: context.length ? 0 : -1,  elements: context.length ? [context[0]] : [] },
-                  added:   { start: -1, elements: [] },
-                  changed: { start: -1, elements: [] }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'unshift',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: -1, elements: [] },
-                  added:   { start:  0, elements: args },
-                  changed: { start: -1, elements: [] }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'sort',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: -1, elements: [] },
-                  added:   { start: -1, elements: [] },
-                  changed: { start:  0, elements: context }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'reverse',
-              chain: function (context, original, args) {
-                var retVal = {
-                  removed: { start: -1, elements: [] },
-                  added:   { start: -1, elements: [] },
-                  changed: { start:  0, elements: context }
-                };
-                retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            },
-            { name: 'splice',
-              chain: function (context, original, args) {
-                var start  = args[0];
-                var remove = args[1];
-                var eles   = __slice.call(args, 2);
-
-                // If it is greater than the array length, set it to the length
-                start = Math.min(start, context.length);
-
-                // If it is < 0, offset from the end of the array.  Taking the max
-                // of the result or zero matches the behavior of chrome when
-                // Math.abs(start) > length
-                start = start < 0 ? Math.max(context.length + start, 0) : start;
-
-                var retVal = {
-                  removed: { start: start }, // set this based on the return value of the original
-                  added:   { start: start, elements: eles },
-                  changed: { start:    -1, elements: [] }
-                };
-                retVal.removed.elements = retVal.response = original.apply(context, args);
-                return retVal;
-              }
-            }
-          ];
+          functions = ['push', 'pop', 'shift', 'unshift', 'sort', 'reverse', 'splice'];
           for (i = 0, len = functions.length; i < len; i++) {
             fn = functions[i];
             this.stubFunction(obj, fn);
