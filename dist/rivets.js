@@ -8,7 +8,9 @@
     __indexOf = [].indexOf || function(item) { for (var i = 0, l = this.length; i < l; i++) { if (i in this && this[i] === item) return i; } return -1; },
     __slice = [].slice,
     __hasProp = {}.hasOwnProperty,
-    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; };
+    __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child;},
+    __extend = function(o1, o2) { for(var key in o2) { o1[key] = o2[key]; } };
+
 
   Rivets = {
     binders: {},
@@ -413,7 +415,12 @@
     Binding.prototype.set = function(value) {
       var _ref1;
       value = value instanceof Function && !this.binder["function"] ? this.formattedValue(value.call(this.model)) : this.formattedValue(value);
-      return (_ref1 = this.binder.routine) != null ? _ref1.call(this, this.el, value) : void 0;
+
+      // Pass along args[1] as context if provided.  This is used by each-*
+      // binder and the array mutation observer as a hint to improve performance
+      var args = [this.el, value];
+      if(arguments[1]) { args.push(arguments[1]); }
+      return (_ref1 = this.binder.routine) != null ? _ref1.apply(this, args) : void 0;
     };
 
     Binding.prototype.sync = function() {
@@ -434,7 +441,12 @@
           }
         }
       }
-      return this.set(this.observer.value());
+
+      // Pass along args[0] as context if provided.  This is used by each-*
+      // binder and the array mutation observer as a hint to improve performance
+      var args = [this.observer.value()];
+      if(arguments[0]) { args.push(arguments[0]); }
+      return this.set.apply(this, args);
     };
 
     Binding.prototype.publish = function() {
@@ -1017,7 +1029,7 @@
   Rivets.binders['each-*'] = {
     block: true,
     bind: function(el) {
-      var attr;
+      var attr, _iterated, _len;
       if (this.marker == null) {
         attr = [this.view.config.prefix, this.type].join('-').replace('--', '-');
         this.marker = document.createComment(" rivets: " + this.type + " ");
@@ -1025,85 +1037,144 @@
         el.removeAttribute(attr);
         el.parentNode.insertBefore(this.marker, el);
         return el.parentNode.removeChild(el);
+      } else {
+        _iterated = this.iterated;
+        _len      = iterated.length;
+        for(var i = 0; i < _len; ++i) {
+          _iterated[i].bind();
+        }
       }
     },
     unbind: function(el) {
-      var view, _i, _len, _ref1, _results;
+      var view, _i, _len, _iterated, _results;
       if (this.iterated != null) {
-        _ref1 = this.iterated;
-        _results = [];
-        for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
-          view = _ref1[_i];
-          _results.push(view.unbind());
+        _iterated = this.iterated;
+        for (_i = 0, _len = _iterated.length; _i < _len; _i++) {
+          view = _iterated[_i];
+          view.unbind();
         }
         return _results;
       }
     },
-    routine: function(el, collection) {
-      var binding, data, i, index, k, key, model, modelName, options, previous, template, v, view, _i, _j, _k, _len, _len1, _len2, _ref1, _ref2, _ref3, _ref4, _results;
+
+    routine: function(el, collection, context) {
+      var binding, data, i, index, model, modelName, options, previous, template, view, len, config, bindings;
+      var curModels = this.view.models;
+      var iterated = this.iterated;
       modelName = this.args[0];
       collection = collection || [];
-      if (this.iterated.length > collection.length) {
-        _ref1 = Array(this.iterated.length - collection.length);
-        for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
-          i = _ref1[_i];
-          view = this.iterated.pop();
+
+      // Since I am hacking this in as a proof of concept, this can be called with
+      // an value for context that isn't expected.  This ensures the context is actually
+      // one that we are expecting (or close enough for now anyway)
+      var hasContext = context && (context.removed && context.added && context.changed);
+
+      if(hasContext && context.removed.elements.length) {
+        for(index = 0; index < context.removed.elements.length; ++index) {
+          view = iterated[context.removed.start + index];
           view.unbind();
           this.marker.parentNode.removeChild(view.els[0]);
         }
+
+        iterated.splice(context.removed.start, context.removed.elements.length);
       }
-      for (index = _j = 0, _len1 = collection.length; _j < _len1; index = ++_j) {
-        model = collection[index];
-        data = {
-          index: index
-        };
-        data[modelName] = model;
-        if (this.iterated[index] == null) {
-          _ref2 = this.view.models;
-          for (key in _ref2) {
-            model = _ref2[key];
-            if (data[key] == null) {
-              data[key] = model;
-            }
-          }
-          previous = this.iterated.length ? this.iterated[this.iterated.length - 1].els[0] : this.marker;
+
+      if(hasContext && context.added.elements.length) {
+        var fragment = document.createDocumentFragment();
+        var args = [context.added.start, 0];
+        for(index = 0; index < context.added.elements.length; ++index) {
+          model = context.added.elements[index]
+          data = {
+            index: index + context.added.start
+          };
+          data[modelName] = model;
+          __extend(data, curModels);
+
           options = {
             binders: this.view.options.binders,
             formatters: this.view.options.formatters,
             adapters: this.view.options.adapters,
             config: {}
           };
-          _ref3 = this.view.options.config;
-          for (k in _ref3) {
-            v = _ref3[k];
-            options.config[k] = v;
-          }
+          config = this.view.options.config;
+          __extend(options.config, config);
+
           options.config.preloadData = true;
           template = el.cloneNode(true);
           view = new Rivets.View(template, data, options);
           view.bind();
-          this.iterated.push(view);
-          this.marker.parentNode.insertBefore(template, previous.nextSibling);
-        } else if (this.iterated[index].models[modelName] !== model) {
-          this.iterated[index].update(data);
+          args.push(view);
+
+          fragment.appendChild(template);
+        }
+
+        previous = context.added.start ? iterated[context.added.start - 1].els[0] : this.marker;
+
+        iterated.splice.apply(iterated, args);
+        this.marker.parentNode.insertBefore(fragment, previous.nextSibling);
+      }
+
+      if(hasContext && context.changed.elements.length) {
+        for(index = context.changed.start; index < context.changed.elements.length; ++index) {
+          model = collection[index];
+          data = {
+            index: index
+          };
+          data[modelName] = model;
+          iterated[index].update(data);
         }
       }
+
+      if(hasContext) {
+        for(index = 0; index < iterated.length; ++index) {
+          iterated[index].models.index = index;
+        }
+        return;
+      }
+
+      for (index = 0, len = collection.length; index < len; ++index) {
+        model = collection[index];
+        data = {
+          index: index
+        };
+        data[modelName] = model;
+        if (iterated[index] == null) {
+          __extend(data, curModels);
+
+          previous = iterated.length ? iterated[iterated.length - 1].els[0] : this.marker;
+          options = {
+            binders: this.view.options.binders,
+            formatters: this.view.options.formatters,
+            adapters: this.view.options.adapters,
+            config: {}
+          };
+          config = this.view.options.config;
+          __extend(options.config, config);
+
+          options.config.preloadData = true;
+          template = el.cloneNode(true);
+          view = new Rivets.View(template, data, options);
+          view.bind();
+          iterated.push(view);
+          this.marker.parentNode.insertBefore(template, previous.nextSibling);
+        } else if (iterated[index].models[modelName] !== model) {
+          iterated[index].update(data);
+        }
+      }
+
       if (el.nodeName === 'OPTION') {
-        _ref4 = this.view.bindings;
-        _results = [];
-        for (_k = 0, _len2 = _ref4.length; _k < _len2; _k++) {
-          binding = _ref4[_k];
+        bindings = this.view.bindings;
+
+        for (i = 0, len = bindings.length; i < len; i++) {
+          binding = bindings[i];
           if (binding.el === this.marker.parentNode && binding.type === 'value') {
-            _results.push(binding.sync());
-          } else {
-            _results.push(void 0);
+            binding.sync();
           }
         }
-        return _results;
       }
     },
     update: function(models) {
-      var data, key, model, view, _i, _len, _ref1, _results;
+      var data, key, model, view, i, len, iterated, _results;
       data = {};
       for (key in models) {
         model = models[key];
@@ -1111,13 +1182,11 @@
           data[key] = model;
         }
       }
-      _ref1 = this.iterated;
-      _results = [];
-      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
-        view = _ref1[_i];
-        _results.push(view.update(data));
+      iterated = this.iterated;
+      for (i = 0, len = iterated.length; i < _len; i++) {
+        view = iterated[i];
+        view.update(data);
       }
-      return _results;
     }
   };
 
@@ -1155,50 +1224,151 @@
       return this.weakmap[obj[this.id]];
     },
     stubFunction: function(obj, fn) {
-      var map, original, weakmap;
-      original = obj[fn];
-      map = this.weakReference(obj);
-      weakmap = this.weakmap;
-      return obj[fn] = function() {
-        var callback, k, r, response, _i, _len, _ref1, _ref2, _ref3, _ref4;
-        response = original.apply(obj, arguments);
-        _ref1 = map.pointers;
-        for (r in _ref1) {
-          k = _ref1[r];
-          _ref4 = (_ref2 = (_ref3 = weakmap[r]) != null ? _ref3.callbacks[k] : void 0) != null ? _ref2 : [];
-          for (_i = 0, _len = _ref4.length; _i < _len; _i++) {
-            callback = _ref4[_i];
-            callback();
+      var original  = obj[fn.name];
+      var map       = this.weakReference(obj);
+      var weakmap   = this.weakmap;
+
+      return obj[fn.name] = function() {
+        var callback, keypath, kpKey, response, i, len, keypaths, curMap, callbacks;
+        //response = original.apply(obj, arguments);
+
+        response = fn.chain(obj, original, arguments);
+        keypaths = map.keypaths;
+        for (kpKey in keypaths) {
+          keypath = keypaths[kpKey];
+
+          curMap = weakmap[kpKey];
+          callbacks = curMap ? curMap.callbacks[keypath] || [] : [];
+
+          for (i = 0, len = callbacks.length; i < len; i++) {
+            callback = callbacks[i];
+            callback(response);
           }
         }
-        return response;
+        return response.response;
       };
     },
+
     observeMutations: function(obj, ref, keypath) {
-      var fn, functions, map, _base, _i, _len;
+      var fn, functions, map, _base, i, len;
       if (Array.isArray(obj)) {
         map = this.weakReference(obj);
-        if (map.pointers == null) {
-          map.pointers = {};
-          functions = ['push', 'pop', 'shift', 'unshift', 'sort', 'reverse', 'splice'];
-          for (_i = 0, _len = functions.length; _i < _len; _i++) {
-            fn = functions[_i];
+        if (map.keypaths == null) {
+          map.keypaths = {};
+          functions = [
+            {
+              name: 'push',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: -1, elements: [] },
+                  added:   { start: context.length, elements: args },
+                  changed: { start: -1, elements: [] }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'pop',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: context.length - 1, elements: [context[context.length - 1]] },
+                  added:   { start: -1, elements: [] },
+                  changed: { start: -1, elements: [] }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'shift',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: 0,  elements: [context[0]] },
+                  added:   { start: -1, elements: [] },
+                  changed: { start: -1, elements: [] }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'unshift',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: -1, elements: [] },
+                  added:   { start:  0, elements: args },
+                  changed: { start: -1, elements: [] }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'sort',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: -1, elements: [] },
+                  added:   { start: -1, elements: [] },
+                  changed: { start:  0, elements: context }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'reverse',
+              chain: function (context, original, args) {
+                var retVal = {
+                  removed: { start: -1, elements: [] },
+                  added:   { start: -1, elements: [] },
+                  changed: { start:  0, elements: context }
+                };
+                retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            },
+            { name: 'splice',
+              chain: function (context, original, args) {
+                var start  = args[0];
+                var remove = args[1];
+                var eles   = __slice.call(args, 2);
+
+                // If it is greater than the array length, set it to the length
+                start = Math.min(start, context.length);
+
+                // If it is < 0, offset from the end of the array.  Taking the max
+                // of the result or zero matches the behavior of chrome when
+                // Math.abs(start) > length
+                start = start < 0 ? Math.max(context.length + start, 0) : start;
+
+                var retVal = {
+                  removed: { start: start }, // set this based on the return value of the original
+                  added:   { start: start, elements: eles },
+                  changed: { start:    -1, elements: [] }
+                };
+                retVal.removed.elements = retVal.response = original.apply(context, args);
+                return retVal;
+              }
+            }
+          ];
+          for (i = 0, len = functions.length; i < len; i++) {
+            fn = functions[i];
             this.stubFunction(obj, fn);
           }
         }
-        if ((_base = map.pointers)[ref] == null) {
+        if ((_base = map.keypaths)[ref] == null) {
           _base[ref] = [];
         }
-        if (__indexOf.call(map.pointers[ref], keypath) < 0) {
-          return map.pointers[ref].push(keypath);
+        if (__indexOf.call(map.keypaths[ref], keypath) < 0) {
+          return map.keypaths[ref].push(keypath);
         }
       }
     },
     unobserveMutations: function(obj, ref, keypath) {
-      var keypaths, _ref1;
+      var keypaths, _ref1, idxToRemove;
       if (Array.isArray(obj && (obj[this.id] != null))) {
-        if (keypaths = (_ref1 = this.weakReference(obj).pointers) != null ? _ref1[ref] : void 0) {
-          return keypaths.splice(keypaths.indexOf(keypath), 1);
+        if (keypaths = (_ref1 = this.weakReference(obj).keypaths) != null ? _ref1[ref] : void 0) {
+          idxToRemove = keypaths.indexOf(keypath);
+
+          if(idxToRemove >= 0) {
+            return keypaths.splice(idxToRemove, 1);
+          }
         }
       }
     },

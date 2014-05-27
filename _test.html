@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Jasmine Spec Runner</title>
+
+  <script src="./dist/rivets.js"></script>
+
+</head>
+<body>
+<ul>
+    <li rv-each-item="items" rv-text="item.name"></li>
+</ul>
+
+<ul>
+    <li><input type="text" rv-value="data.push"/><button rv-on-click="ctrl.push">push</button></button></li>
+    <li><button rv-on-click="ctrl.pop">pop</button></li>
+    <li><input type="text" rv-value="data.unshift"/><button rv-on-click="ctrl.unshift">unshift</button></button></li></li>
+    <li><button rv-on-click="ctrl.shift">shift</button></li>
+    <li><button rv-on-click="ctrl.sort">sort</button></li>
+    <li><button rv-on-click="ctrl.reverse">reverse</button></li>
+    <li>splice</li>
+</ul>
+<script>
+(function() {
+    var data = [
+        {name: 'Alfred'},
+        {name: 'Bob'},
+        {name: 'Robert'},
+        {name:  'Beth'}
+    ];
+
+    var view = rivets.bind(document.querySelectorAll('ul')[0], {
+        items: data
+    });
+
+    var controller = {
+        data: {},
+        ctrl: {
+            push: function() {
+                var names = controller.data.push.split(',').map(function(val) {
+                    return {name: val};
+                });
+
+                data.push.apply(data, names);
+            },
+
+            pop: function() { data.pop(); },
+            unshift: function() {
+                var names = controller.data.unshift.split(',').map(function(val) {
+                    return {name: val};
+                });
+
+                data.unshift.apply(data, names);
+            },
+            shift: function() { data.shift(); },
+            sort: function() {
+                data.sort(function (v1, v2) {
+                    if (v1.name < v2.name) return -1;
+                    else if (v1.name > v2.name) return 1;
+                    else return 0;
+                })
+            },
+            reverse: function() { data.reverse(); }
+
+        }
+    }
+
+    var ctrlView = rivets.bind(document.querySelectorAll('ul')[1], controller);
+
+})();
+</script>
+</body>
+</html>
